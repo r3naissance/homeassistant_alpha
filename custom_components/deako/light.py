@@ -6,12 +6,12 @@ from typing import Any
 from pydeako.deako import Deako
 
 from homeassistant.components.light import ATTR_BRIGHTNESS, ColorMode, LightEntity
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CONNECTION, DOMAIN
+from . import DeakoConfigEntry
+from .const import DOMAIN
 
 # Model names
 MODEL_SMART = "smart"
@@ -22,28 +22,27 @@ _LOGGER: logging.Logger = logging.getLogger(__name__)
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    config: ConfigEntry,
+    config: DeakoConfigEntry,
     add_entities: AddEntitiesCallback,
 ) -> None:
     """Configure the platform."""
-    client: Deako = hass.data[DOMAIN][CONNECTION]
+    client = config.runtime_data
 
-    devices = client.get_devices()
-    lights = [DeakoLightEntity(client, uuid) for uuid in devices]
-    add_entities(lights)
+    if client is not None:
+        add_entities([DeakoLightEntity(client, uuid) for uuid in client.get_devices()])
+    else:
+        _LOGGER.error("Deako client not set in config entry")
 
 
 class DeakoLightEntity(LightEntity):
     """Deako LightEntity class."""
 
-    # retype because these will be set
-    _attr_unique_id: str
-    _attr_supported_color_modes: set[ColorMode]
-
     _attr_has_entity_name = True
     _attr_name = None
     _attr_is_on = False
     _attr_available = True
+
+    client: Deako
 
     def __init__(self, client: Deako, uuid: str) -> None:
         """Save connection reference."""
@@ -75,12 +74,14 @@ class DeakoLightEntity(LightEntity):
         self.update()
         self.schedule_update_ha_state()
 
-    def get_state(self) -> dict:
+    def get_state(self) -> dict[str, bool | int]:
         """Return state of entity from client."""
+        assert self._attr_unique_id is not None
         return self.client.get_state(self._attr_unique_id) or {}
 
     async def control_device(self, power: bool, dim: int | None = None) -> None:
         """Control entity state via client."""
+        assert self._attr_unique_id is not None
         await self.client.control_device(self._attr_unique_id, power, dim)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
@@ -98,5 +99,8 @@ class DeakoLightEntity(LightEntity):
         """Call to update state."""
         state = self.get_state()
         self._attr_is_on = bool(state.get("power", False))
-        if ColorMode.BRIGHTNESS in self._attr_supported_color_modes:
+        if (
+            self._attr_supported_color_modes is not None
+            and ColorMode.BRIGHTNESS in self._attr_supported_color_modes
+        ):
             self._attr_brightness = int(round(state.get("dim", 0) * 2.55))
