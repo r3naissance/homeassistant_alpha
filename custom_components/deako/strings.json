@@ -2,7 +2,7 @@
   "config": {
     "step": {
       "confirm": {
-        "description": "Please confirm setting up the Deako integration"
+        "description": "[%key:common::config_flow::description::confirm_setup%]"
       }
     },
     "abort": {
